@@ -10,6 +10,7 @@ def get_annotation_value(extracted_df, annotation):
 
 
 def general_fields(pvi_json, extracted_df):
+    final_list = []
     if pvi_json["senderCaseVersion"] and pvi_json["senderCaseVersion"] == '2':
         pvi_json['mostRecentReceiptDate'] = None
     if pvi_json['senderCaseVersion_acc'] and pvi_json['senderCaseVersion_acc'] == '1':
@@ -23,6 +24,12 @@ def general_fields(pvi_json, extracted_df):
     #pvi_json['patient']['name'] = pat_data[0][3].strip()
     if pvi_json['patient']['age']['inputValue'] and '/' in pvi_json['patient']['age']['inputValue']:
         pvi_json['patient']['age']['inputValue'] = transform_date(pvi_json['patient']['age']['inputValue'], 'dd/mm/yyyy', '%d-%b-%Y')
+    if pvi_json['patient']['name']:
+        pvi_json['patient']['name'] = '/' + pvi_json['patient']['name']
+    for med_his in pvi_json['patient']['medicalHistories']:
+        if med_his['reportedReaction']:
+            final_list.append(med_his)
+    pvi_json['patient']['medicalHistories'] = final_list
     return pvi_json
 
 
@@ -31,16 +38,14 @@ def parse_reporter_details(pvi_json):
     for reporter in pvi_json['reporters']:
         reporter['faxNumber'], reporter['fax'] = reporter['fax'], None
         reporter['consentForFU'], reporter['country_acc'] = reporter['country_acc'], None
-        # if reporter['contactType'] and reporter['contactType'].lower() == 'y' and not reporter['contactType_acc']:
-        #     reporter['contactType'], reporter['occupation'] = reporter['occupation'], None
-        # if reporter['contactType'] and reporter['contactType'].lower() == 'n':
-        #     reporter['contactType'], reporter['occupation'] = None, None
+        if reporter['department_acc'] and 'patient' in reporter['department_acc'].lower().strip():
+            reporter['contactType'], reporter['department_acc'] = reporter['department_acc'], None
         if reporter['contactType_acc']:
             parsed_name_dict = HumanName(reporter['firstName'])
-            reporter['title'] = parsed_name_dict['title'].title()
-            reporter['firstName'] = parsed_name_dict['first'].title()
-            reporter['middleName'] = parsed_name_dict['middle'].title()
-            reporter['lastName'] = parsed_name_dict['last'].title()
+            reporter['title'] = parsed_name_dict['title'].title().upper()
+            reporter['firstName'] = parsed_name_dict['first'].title().upper()
+            reporter['middleName'] = parsed_name_dict['middle'].title().upper()
+            reporter['lastName'] = parsed_name_dict['last'].title().upper()
         if reporter['firstName'] or reporter['lastName'] or reporter['middleName']:
             final_reporter_list.append(reporter)
     pvi_json['reporters'] = final_reporter_list
@@ -72,11 +77,20 @@ def date_validator(pvi_json):
 
 
 def product_seq_num(pvi_json):
+    freq_list = ['bid', 'prn', 'q10h', 'q2h', 'q3h', 'q4h', 'qd', 'qh', 'qid', 'qod', 'qom', 'qow', 'qw', 'single', 'tid']
     for prod in pvi_json['products']:
         prod['seq_num'] = pvi_json['products'].index(prod) + 1
         for dose_info in prod['doseInformations']:
             if dose_info['dose_inputValue']:
                 dose_info['dose_inputValue'] = ' '.join(dose_info['dose_inputValue'].split()[:2])
+            if dose_info['frequency_value']:
+                if dose_info['frequency_value'].strip().lower() in freq_list:
+                    pass
+                else:
+                    if dose_info['description']:
+                        dose_info['description'] = dose_info['description'] + ' Frequency: ' + dose_info['frequency_value']
+                    else:
+                        dose_info['description'] = 'Frequency: ' + dose_info['frequency_value']
     return pvi_json
 
 
